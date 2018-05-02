@@ -137,6 +137,37 @@ function tests(dbName, dbType) {
       });
     });
 
+    it('should upsert a new doc in parallel, diffFun promise, still gen-1', function () {
+
+      function diff(doc) {
+        return new Promise(function(resolve) {
+          setTimeout(function() {
+            if (doc.version) {
+              resolve(false);
+            }
+            resolve({version: 1});
+          }, 25);
+        });
+      }
+
+      var promises = [
+        db.upsert('myid', diff),
+        db.upsert('myid', diff),
+        db.upsert('myid', diff)
+      ];
+
+      return Promise.all(promises).then(function () {
+        return db.get('myid');
+      }).then(function (doc) {
+        doc._rev.should.match(/1-/); // still gen-1
+        delete doc._rev;
+        doc.should.deep.equal({
+          _id: 'myid',
+          version: 1
+        });
+      });
+    });
+
     it('should throw if no doc _id', function () {
       return db.upsert({}, function () {
         return {some: 'doc'};
@@ -176,6 +207,36 @@ function tests(dbName, dbType) {
       });
     });
 
+    it('should upsert an existing doc, with diffFun returning a promise', function () {
+      return db.upsert('myid', function () {
+        return new Promise(function(resolve) {
+          setTimeout(function() {
+            resolve({some: 'doc'});
+          }, 25);
+        });
+      }).then(function (res) {
+        res.updated.should.equal(true);
+        res.rev.should.match(/1-/);
+        return db.upsert('myid', function (doc) {
+          doc.version = 2;
+          return doc;
+        });
+      }).then(function (res) {
+        res.updated.should.equal(true);
+        res.rev.should.match(/2-/);
+        res.id.should.equal('myid');
+        return db.get('myid');
+      }).then(function (doc) {
+        should.exist(doc._rev);
+        delete doc._rev;
+        doc.should.deep.equal({
+          _id: 'myid',
+          some: 'doc',
+          version: 2
+        });
+      });
+    });
+
     it('should not upsert if diffFun returns falsy', function () {
       return db.upsert('myid', function () {
         return {some: 'doc'};
@@ -185,6 +246,35 @@ function tests(dbName, dbType) {
         res.id.should.equal('myid');
         return db.upsert('myid', function () {
           return false;
+        });
+      }).then(function (res) {
+        res.updated.should.equal(false);
+        res.rev.should.match(/1-/);
+        res.id.should.equal('myid');
+        return db.get('myid');
+      }).then(function (doc) {
+        should.exist(doc._rev);
+        delete doc._rev;
+        doc.should.deep.equal({
+          _id: 'myid',
+          some: 'doc'
+        });
+      });
+    });
+
+    it('should not upsert if diffFun resolves falsy', function () {
+      return db.upsert('myid', function () {
+        return {some: 'doc'};
+      }).then(function (res) {
+        res.updated.should.equal(true);
+        res.rev.should.match(/1-/);
+        res.id.should.equal('myid');
+        return db.upsert('myid', function () {
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              resolve(false);
+            }, 25);
+          });
         });
       }).then(function (res) {
         res.updated.should.equal(false);
@@ -383,6 +473,20 @@ function tests(dbName, dbType) {
     it('errors thrown in diff function shouldn\'t crash the system', function () {
       return db.upsert('foo', function () {
         throw new Error("An upsert diff error.");
+      }).then(function () {
+        throw new Error("Finished upsert without throwing error.");
+      }, function (e) {
+        should.exist(e);
+      });
+    });
+
+    it('promise rejections in diff function shouldn\'t crash the system', function () {
+      return db.upsert('foo', function () {
+        return new Promise(function(resolve, reject) {
+          setTimeout(function() {
+           reject(new Error("Error!"));
+          }, 25);
+        });
       }).then(function () {
         throw new Error("Finished upsert without throwing error.");
       }, function (e) {

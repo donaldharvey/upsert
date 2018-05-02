@@ -19,19 +19,27 @@ function upsertInner(db, docId, diffFun) {
   }).then(function (doc) {
     // the user might change the _rev, so save it for posterity
     var docRev = doc._rev;
-    var newDoc = diffFun(doc);
+    var result = diffFun(doc);
+    var cb = function(newDoc) {
+      if (!newDoc) {
+        // if the diffFun returns falsy, we short-circuit as
+        // an optimization
+        return { updated: false, rev: docRev, id: docId };
+      }
 
-    if (!newDoc) {
-      // if the diffFun returns falsy, we short-circuit as
-      // an optimization
-      return { updated: false, rev: docRev, id: docId };
+      // users aren't allowed to modify these values,
+      // so reset them here
+      newDoc._id = docId;
+      newDoc._rev = docRev;
+      return tryAndPut(db, newDoc, diffFun);
+    };
+
+    if (typeof result.then === 'function') {
+      return result.then(cb);
     }
-
-    // users aren't allowed to modify these values,
-    // so reset them here
-    newDoc._id = docId;
-    newDoc._rev = docRev;
-    return tryAndPut(db, newDoc, diffFun);
+    else {
+      return cb(result);
+    }
   });
 }
 

@@ -57,9 +57,8 @@ Perform an upsert (update or insert) operation. If you don't specify a `callback
 * `docId` - the `_id` of the document.
 * `diffFunc` - function that takes the existing doc as input and returns an updated doc.
   * If this `diffFunc` returns falsey, then the update won't be performed (as an optimization).
+  * diffFunc can return a promise instead of returning synchronously.
   * If the document does not already exist, then `{}` will be the input to `diffFunc`.
-
-**Note:** By design, the goal of this repo is to just provide a handler for synchronized logic. ```diffFunc``` must not make asynchronous calls.
 
 ##### Example 1
 
